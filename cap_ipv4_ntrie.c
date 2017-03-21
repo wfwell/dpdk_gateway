@@ -25,6 +25,8 @@
 #include <linux/delay.h>
 #include <asm/system.h>
 #endif
+#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include "list.h"
 #include "cap_trans.h"
@@ -101,21 +103,21 @@ static IPV4STATUS_LIST_HEAD* from_size_to_list(unsigned long size)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-static inline IPV4STATUS * freeblock_get_head(unsigned long size)
+static  IPV4STATUS * freeblock_get_head(unsigned long size)
 {
 	IPV4STATUS_LIST_HEAD * plink;
 	IPV4STATUS * pblock;
 	IPV4STATUS_LIST_HEAD * free_block_list=from_size_to_list(size);
 	
-	if(list_empty(free_block_list))
+	if(list_empty((struct list_head *)free_block_list))
 		return NULL;
 
 	plink=free_block_list->next;
 	pblock=plink->block;
 	plink->block=NULL;
 
-	list_del(plink);
-	list_add(plink,&g_listfreelink);
+	list_del((struct list_head *)plink);
+	list_add((struct list_head *)plink,(struct list_head *)&g_listfreelink);
 	free_block_list->queue_len--;
 	g_listfreelink.queue_len++;
 
@@ -124,7 +126,7 @@ static inline IPV4STATUS * freeblock_get_head(unsigned long size)
 
 
 
-static inline void freeblock_put_tail(IPV4STATUS*parent)
+static void freeblock_put_tail(IPV4STATUS*parent)
 {
 	IPV4STATUS_LIST_HEAD * plink;
 	
@@ -140,8 +142,8 @@ static inline void freeblock_put_tail(IPV4STATUS*parent)
 	plink=g_listfreelink.next;
 
 
-	list_del(plink);
-	list_add_tail(plink,free_block_list);
+	list_del((struct list_head *)plink);
+	list_add_tail((struct list_head *)plink,(struct list_head *)free_block_list);
 	free_block_list->queue_len++;
 	g_listfreelink.queue_len--;
 
@@ -152,7 +154,7 @@ static inline void freeblock_put_tail(IPV4STATUS*parent)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-static inline void free_tree(IPV4STATUS * node)
+static  void free_tree(IPV4STATUS * node)
 {
 	unsigned long i;
 	IPV4STATUS_LIST_HEAD*pcurrent;
@@ -175,7 +177,7 @@ static inline void free_tree(IPV4STATUS * node)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-static inline IPV4STATUS * alloc_children(IPV4STATUS *parent,unsigned long size)
+static  IPV4STATUS * alloc_children(IPV4STATUS *parent,unsigned long size)
 {
 	unsigned long i;
 	IPV4STATUS *pblock=freeblock_get_head(size);
@@ -183,7 +185,7 @@ static inline IPV4STATUS * alloc_children(IPV4STATUS *parent,unsigned long size)
 
 	if(!pblockaddress)
 	{
-		printk(KERN_ALERT"alloc_children : failed when freeblock_get_head(%lu).\n",size);
+		printf("alloc_children : failed when freeblock_get_head(%lu).\n",size);
 		return NULL;
 	}
 
@@ -234,7 +236,7 @@ int multi_ntrie_init(unsigned long MemoryPoolSize1,unsigned long MemoryPoolSize2
 			return -1;
 		}
 
-		list_add_tail(ptail,&g_listfreeblock_256);
+		list_add_tail((struct list_head *)ptail,(struct list_head *)&g_listfreeblock_256);
 		g_listfreeblock_256.queue_len++;
 	}
 
@@ -258,7 +260,7 @@ int multi_ntrie_init(unsigned long MemoryPoolSize1,unsigned long MemoryPoolSize2
 			return -1;
 		}
 
-		list_add_tail(ptail,&g_listfreeblock_65536);
+		list_add_tail((struct list_head *)ptail,(struct list_head *)&g_listfreeblock_65536);
 		g_listfreeblock_65536.queue_len++;
 	}
 
@@ -273,33 +275,33 @@ void multi_ntrie_free(void)
 
 	free_tree(&g_treeipv4status);
 
-	while(  ! list_empty(&g_listfreeblock_256) )
+	while(  ! list_empty((struct list_head *)&g_listfreeblock_256) )
 	{
 		pcurrent=g_listfreeblock_256.next;
-		list_del(pcurrent);
+		list_del((struct list_head *)pcurrent);
 		free(BLOCK_ADDRESS(pcurrent->block));
 		free(pcurrent);
 	}
 
-	while(  ! list_empty(&g_listfreeblock_65536) )
+	while(  ! list_empty((struct list_head *)&g_listfreeblock_65536) )
 	{
 		pcurrent=g_listfreeblock_65536.next;
-		list_del(pcurrent);
+		list_del((struct list_head *)pcurrent);
 		free(BLOCK_ADDRESS(pcurrent->block));
 		free(pcurrent);
 	}
 
-	while(  ! list_empty(&g_listfreelink) )
+	while(  ! list_empty((struct list_head *)&g_listfreelink) )
 	{
 		pcurrent=g_listfreelink.next;
-		list_del(pcurrent);
+		list_del((struct list_head *)pcurrent);
 		free(pcurrent);
 	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-inline unsigned long multi_ntrie_get_status(register unsigned char *ip/*[16]*/)
+ unsigned long multi_ntrie_get_status(register unsigned char *ip/*[16]*/)
 {
        register IPV4STATUS *p=&g_treeipv4status;
 	register unsigned long index;
@@ -329,7 +331,7 @@ inline unsigned long multi_ntrie_get_status(register unsigned char *ip/*[16]*/)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-inline int multi_ntrie_set_status(register unsigned char*netprefix , unsigned long prefixlength, unsigned long status)
+ int multi_ntrie_set_status(register unsigned char*netprefix , unsigned long prefixlength, unsigned long status)
 {
 	IPV4STATUS *p=&g_treeipv4status;
 
@@ -433,7 +435,7 @@ inline int multi_ntrie_set_status(register unsigned char*netprefix , unsigned lo
 	
 nomemory:
 	
-	return -ENOMEM;
+	return -1;
 }
 
 
