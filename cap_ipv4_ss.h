@@ -5,19 +5,14 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-unsigned long 
-get_ipv4_status(unsigned char*ip);
+unsigned long get_ipv4_status(unsigned char*ip);
 
-void 
-get_ipv4_all(struct trans_ioctl_ipv4 *attr);
+void get_ipv4_all(struct trans_ioctl_ipv4 *attr);
 
-int 
-set_ipv4_status(unsigned char * netprefix,unsigned long prefixlen,unsigned long status);
+int set_ipv4_status(unsigned char * netprefix,unsigned long prefixlen,unsigned long status);
 
-unsigned long 
-transfer_test_and_merge_flow4(struct iphdr*ipv4h);
+unsigned long transfer_test_and_merge_flow4(struct iphdr*ipv4h);
 
-int 
-print_ipv4_memory_info(void);
+int print_ipv4_memory_info(void);
 
 #endif

@@ -1,3 +1,4 @@
+#if 0
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -24,6 +25,7 @@
 #include <linux/delay.h>
 #include <asm/system.h>
 #include <linux/ip.h>
+#endif
 
 #include "cap_trans.h"
 #include "cap_ipv4_ss.h"
