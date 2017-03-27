@@ -31,33 +31,20 @@
 #include "cap_ipv4_ss.h"
 #include "cap_ipv4_hashrbtree.h"
 #include "cap_ipv4_ntrie.h"
-
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+#include <pthread.h>
+#include <time.h>
+#if 0
 MODULE_DESCRIPTION("IPv4 Address Store & Search Module");
 MODULE_AUTHOR("Husong ,husong@husong.com 2010-02-24");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+#endif
 
 static unsigned long   MemoryPoolSize1=1024*1024*32;
-module_param(MemoryPoolSize1,ulong,S_IRUGO);
-
 static unsigned long   MemoryPoolSize2=1024*1024*1;
-module_param(MemoryPoolSize2,ulong,S_IRUGO);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-
-static struct rb_root*g_table=NULL;
-static rwlock_t g_ipv4status_lock;
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+static struct rb_root* g_table=NULL;
+//static rwlock_t g_ipv4status_lock;
+static pthread_mutex_t g_ipv4status_lock;
 
 
 unsigned long get_ipv4_status(unsigned char*ip)
@@ -65,14 +52,13 @@ unsigned long get_ipv4_status(unsigned char*ip)
 	unsigned long flags;
 	unsigned long status=0;
 	struct my_rbnode*mynode=NULL;
-//	
-	read_lock_irqsave(&g_ipv4status_lock,flags);
-//
+
+	//read_lock_irqsave(&g_ipv4status_lock,flags);
+        pthread_mutex_lock(&g_ipv4status_lock);
 	mynode=hash_rbtree_search(g_table,ip);
 	status=mynode?mynode->attr.status:multi_ntrie_get_status(ip);
-//
-	read_unlock_irqrestore(&g_ipv4status_lock,flags);
-//
+	//read_unlock_irqrestore(&g_ipv4status_lock,flags);
+        pthread_mutex_unlock(&g_ipv4status_lock);
 	return status;
 }
 
@@ -81,9 +67,8 @@ void get_ipv4_all(struct trans_ioctl_ipv4 *attr)
 	unsigned long flags;
 	
 	struct my_rbnode* mynode=NULL;
-//		
-	read_lock_irqsave(&g_ipv4status_lock,flags);
-//
+	//read_lock_irqsave(&g_ipv4status_lock,flags);
+        pthread_mutex_lock(&g_ipv4status_lock);
 	mynode=hash_rbtree_search(g_table,attr->net);
 	if(mynode){
 		memcpy(attr, &(mynode->attr), sizeof(struct trans_ioctl_ipv4));
@@ -98,9 +83,8 @@ void get_ipv4_all(struct trans_ioctl_ipv4 *attr)
 		attr->pkts_in=0;
 		attr->pkts_out=0;
 	}
-//	
-	read_unlock_irqrestore(&g_ipv4status_lock,flags);
-//
+	//read_unlock_irqrestore(&g_ipv4status_lock,flags);
+        pthread_mutex_unlock(&g_ipv4status_lock);
 }
 
 
@@ -112,7 +96,8 @@ int set_ipv4_status(unsigned char * netprefix,unsigned long prefixlen,unsigned l
 
 	int ret=0;
 //	
-	write_lock_irqsave(&g_ipv4status_lock,flags);
+	//write_lock_irqsave(&g_ipv4status_lock,flags);
+        pthread_mutex_lock(&g_ipv4status_lock);
 //	
 	if(prefixlen==32){
 		if(multi_ntrie_get_status(netprefix)==status){//same status exists in m-tries,
@@ -125,13 +110,14 @@ int set_ipv4_status(unsigned char * netprefix,unsigned long prefixlen,unsigned l
 		ret=multi_ntrie_set_status(netprefix,prefixlen,status);
 	}
 //
-	write_unlock_irqrestore(&g_ipv4status_lock,flags);
+	//write_unlock_irqrestore(&g_ipv4status_lock,flags);
+        pthread_mutex_unlock(&g_ipv4status_lock);
 //
 	return ret;
 }
 
 
-static inline struct trans_ioctl_ipv4 * __get_ipv4_status_and_flow_ptr(unsigned char*ip,unsigned long *status)
+static  struct trans_ioctl_ipv4 * __get_ipv4_status_and_flow_ptr(unsigned char*ip,unsigned long *status)
 {
 	struct my_rbnode* mynode=hash_rbtree_search(g_table,ip);
 	if(mynode){
@@ -155,7 +141,8 @@ unsigned long transfer_test_and_merge_flow4(struct iphdr*ipv4h)
 	unsigned short payload_len;
 
 //
-	write_lock_irqsave(&g_ipv4status_lock,flags);
+	//write_lock_irqsave(&g_ipv4status_lock,flags);
+        pthread_mutex_lock(&g_ipv4status_lock);
 //	
 	sipnode = __get_ipv4_status_and_flow_ptr((unsigned char*)&(ipv4h->saddr),&scntl);
 	dipnode = __get_ipv4_status_and_flow_ptr((unsigned char*)&(ipv4h->daddr),&dcntl);
@@ -178,7 +165,7 @@ unsigned long transfer_test_and_merge_flow4(struct iphdr*ipv4h)
 		
 		if(sipnode){
 			sipnode->pkts_out ++;
-			sipnode->lasttime_out = current_kernel_time().tv_sec;
+			sipnode->lasttime_out = time(NULL);
 
 			if(dcntl == IPVO_FREE)
 				sipnode->bytesN_out += payload_len;
@@ -188,7 +175,7 @@ unsigned long transfer_test_and_merge_flow4(struct iphdr*ipv4h)
 
 		if(dipnode){
 			dipnode->pkts_in ++;
-			dipnode->lasttime_in = current_kernel_time().tv_sec;
+			dipnode->lasttime_in = time(NULL);
 
 			if(scntl == IPVO_FREE)
 				dipnode->bytesN_in += payload_len;
@@ -198,47 +185,35 @@ unsigned long transfer_test_and_merge_flow4(struct iphdr*ipv4h)
 		
 	}
 //	
-	write_unlock_irqrestore(&g_ipv4status_lock,flags);
+	//write_unlock_irqrestore(&g_ipv4status_lock,flags);
+        pthread_mutex_unlock(&g_ipv4status_lock);
 //
 
 	return ok_to_go;
 }
 
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 int print_ipv4_memory_info()
 {
 	unsigned long flags;
 
-	write_lock_irqsave(&g_ipv4status_lock,flags);
+	//write_lock_irqsave(&g_ipv4status_lock,flags);
+        pthread_mutex_lock(&g_ipv4status_lock);
 
 	multi_ntrie_print_memory();
 	hash_rbtree_print_memory();
 
-	write_unlock_irqrestore(&g_ipv4status_lock,flags);
+	//write_unlock_irqrestore(&g_ipv4status_lock,flags);
+        pthread_mutex_unlock(&g_ipv4status_lock);
 	
 	return 0;
 }
 
-
-
-EXPORT_SYMBOL(get_ipv4_status);
-EXPORT_SYMBOL(get_ipv4_all);
-EXPORT_SYMBOL(set_ipv4_status);
-EXPORT_SYMBOL(transfer_test_and_merge_flow4);
-EXPORT_SYMBOL(print_ipv4_memory_info);
-
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-static int __init cap_ipv4_ss_init(void)
+int cap_ipv4_ss_init(void)
 {
 	int result;
 
-	rwlock_init(&g_ipv4status_lock);
+	//rwlock_init(&g_ipv4status_lock);
+        pthread_mutex_init(&g_ipv4status_lock,NULL);
 	
 	result=multi_ntrie_init(MemoryPoolSize1,MemoryPoolSize2);
 	
@@ -261,15 +236,9 @@ error1:
 
 	return result;
 }
-
-static void __exit cap_ipv4_ss_exit(void)
+void cap_ipv4_ss_exit(void)
 {
 	hash_rbtree_free(&g_table);
 	multi_ntrie_free();
 }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-module_init(cap_ipv4_ss_init);
-module_exit(cap_ipv4_ss_exit);
 
